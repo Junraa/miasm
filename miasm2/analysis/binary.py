@@ -1,8 +1,9 @@
 import logging
 
+from miasm2.analysis.machine import Machine
+from miasm2.core.asmbloc import asm_symbol_pool
 from miasm2.core.bin_stream import bin_stream_str, bin_stream_elf, bin_stream_pe
 from miasm2.jitter.csts import PAGE_READ
-from miasm2.core.asmbloc import asm_symbol_pool
 
 
 log = logging.getLogger("binary")
@@ -99,6 +100,13 @@ class Container(object):
         # Launch parsing
         self.parse(*args, **kwargs)
 
+        # Set disasmEngine
+        self.disasmEngine = Machine(self.arch).dis_engine(self.bin_stream)
+
+
+    def dis_multibloc(self, offset, blocs=None, resolve_address=False):
+        return self.disasmEngine.dis_multibloc(offset, blocs)
+
     @property
     def bin_stream(self):
         "Return the BinStream instance corresponding to container content"
@@ -121,8 +129,18 @@ class Container(object):
 
     @property
     def symbol_pool(self):
-        "asm_symbol_pool instance preloaded with container symbols (if any)"
-        return self._symbol_pool
+        "asm_symbol_pool instance preloaded with container and disasmEngine symbols (if any)"
+        return self.disasmEngine.symbol_pool
+
+    @property
+    def attrib(self):
+        "disasmEngine attribute"
+        return self.disasmEngine.attrib
+
+    @property
+    def disasm_engine(self):
+        "disasmEngine"
+        return self.disasmEngine
 
 
 ## Format dependent classes
@@ -193,21 +211,83 @@ class ContainerELF(Container):
         except Exception, error:
             raise ContainerParsingException('Cannot read ELF: %s' % error)
 
-        # Add known symbols
-        symtab = self._executable.getsectionbyname(".symtab")
-        if symtab is not None:
-            for name, symb in symtab.symbols.iteritems():
-                offset = symb.value
-                if offset != 0:
-                    try:
-                        self._symbol_pool.add_label(name, offset)
-                    except ValueError:
-                        # Two symbols points on the same offset
-                        log.warning("Same offset (%s) for %s and %s", (hex(offset),
-                                                                       name,
-                                                                       self._symbol_pool.getby_offset(offset)))
-                        continue
 
+    def get_symbol_in_plt(self, addr):
+        rel = self._executable.getsectionbyname(".rel.plt")
+        rela = self._executable.getsectionbyname(".rela.plt")
+        plt = self._executable.getsectionbyname(".plt")
+
+        for reloc in rel, rela:
+            if not reloc:
+                continue
+            if not (plt.sh.addr <= addr < (plt.sh.size + plt.sh.addr)):
+                return None
+            index = (addr - plt.sh.addr) / 0x10
+            if index >= len(reloc.reltab):
+                return None
+            else:
+                return reloc.reltab[index - 1].sym
+        return None
+
+
+     """Search for the given address in all available symbols
+    """
+    def get_symbol_by_addr(self, addr):
+        symbol = self.get_symbol_in_plt(addr)
+        if symbol is None:
+            symtab = self._executable.getsectionbyname(".symtab")
+            for sym in symtab.symbols:
+                if symtab.symbols[sym].value == addr:
+                    return sym, symtab.symbols[sym].size;
+        else:
+            symbol += "@plt"
+        return symbol, 0
+
+
+    def get_all_symbols(self):
+        """Create a map between symbol name and their related addresses
+        and sizes.
+        """
+        symbols_map = { }
+        symtab = self._executable.getsectionbyname(".symtab")
+        for sym in symtab.symtab:
+            if sym.name and sym.value:
+                symbols_map[sym.name] = sym.value, sym.size
+
+        rel = self._executable.getsectionbyname(".rel.plt")
+        rela = self._executable.getsectionbyname(".rela.plt")
+        plt = self._executable.getsectionbyname(".plt")
+
+        for reloc in rel, rela:
+            if not reloc:
+                continue
+            index = 0
+            for rel_entry in reloc.reltab:
+                addr = (index + 1) * 0x10 + plt.sh.addr
+                symbols_map[rel_entry.sym + "@plt"] = addr, 0
+                index += 1
+
+        return symbols_map
+
+
+    def dis_multibloc(self, offset, blocs=None, resolve_address=False):
+        blocks = self.disasmEngine.dis_multibloc(offset, blocs)
+
+        # Set symbol pool and relative address if asked to.
+        if resolve_address:
+            symbols_map = self.get_all_symbols()
+            for label in self.disasmEngine.symbol_pool._labels:
+                # If "loc_" is in label.name, we can assume that
+                # it has been generated from an address and can be resolved.
+                if "loc_" in label.name:
+                    for sym in symbols_map:
+                        base_addr, size = symbols_map[sym]
+                        if base_addr <= label.offset < (base_addr + max(size, 1)):
+                            relative = label.offset - base_addr
+                            newname = sym + (("+0x%x" % relative) if relative else "")
+                            self.disasmEngine.symbol_pool.rename_label(label, newname)
+                            break
+        return blocks
 
 
 class ContainerUnknown(Container):
