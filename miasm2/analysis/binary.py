@@ -181,6 +181,77 @@ class ContainerPE(Container):
             raise ContainerParsingException('Cannot read PE: %s' % error)
 
 
+    def get_symbol_by_addr(self, addr):
+        symbols = self._executable.Symbols.symbols
+        base_text = 0
+        for sect in self._executable.SHList:
+            if sect.name == ".text":
+                base_text = self._executable.rva2virt(sect.addr)
+        searched_offset = addr - base_text
+        for sym in symbols:
+            if sym.value == searched_offset:
+                return sym.name, 0
+
+        return None, 0
+
+    def get_all_symbols(self):
+        symbols_map = { }
+        symbols = [ x for x in self._executable.Symbols.symbols if
+                   x.type == 0x20 ]
+        base_text = 0
+        for sect in self._executable.SHList:
+            if sect.name.rstrip('\x00') == ".text":
+                base_text = self._executable.rva2virt(sect.addr)
+        import_table = self._executable.DirImport
+        imported_functions = {}
+        for i, s in enumerate(import_table.impdesc):
+            imported_functions[s.dlldescname.name] = []
+            for ii, f in enumerate(s.impbynames):
+                imported_functions[s.dlldescname.name].append(f.name)
+
+        for sym in symbols:
+            found = False
+            for dll, function_list in imported_functions.iteritems():
+                if sym.name in function_list:
+                    #TODO check if size is present
+                    symbols_map[sym.name + "." + dll + "@plt"] = sym.value + base_text, 0
+                    found = True
+                    break
+            if found:
+                continue
+            else:
+                symbols_map[sym.name] = sym.value + base_text, 0
+
+        return symbols_map
+
+
+    def get_addr_by_symbol(self, name):
+        symbols = self.get_all_symbols()
+        for sym, (addr, offset) in symbols.iteritems():
+            if sym == name:
+                return addr
+        return None
+
+    def dis_multibloc(self, offset, blocs=None, resolve_address=False):
+        self.disasmEngine.follow_call = True
+        blocks = self.disasmEngine.dis_multibloc(offset, blocs)
+
+        # Set symbol pool and relative address
+        if resolve_address:
+            symbols_map = self.get_all_symbols()
+            for label in self.disasmEngine.symbol_pool._labels:
+                # If "loc_" is in label.name, we can assume that it has been generated
+                if "loc_" in label.name:
+                    for sym in symbols_map:
+                        base_addr, size = symbols_map[sym]
+                        if base_addr <= label.offset < (base_addr + max(size, 1)):
+                            relative = label.offset - base_addr
+                            newname = sym + (("+0x%x" % relative) if relative else "")
+                            self.disasmEngine.symbol_pool.rename_label(label, newname)
+                            break
+        return blocks
+
+
 class ContainerELF(Container):
     "Container abstraction for ELF"
 
