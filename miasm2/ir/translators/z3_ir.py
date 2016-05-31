@@ -123,6 +123,10 @@ class TranslatorZ3(Translator):
     def from_ExprId(self, expr):
         if isinstance(expr.name, asm_label) and expr.name.offset is not None:
             return z3.BitVecVal(expr.name.offset, expr.size)
+        elif (isinstance(expr.name, asm_label) and
+              expr.name.name.startswith("lbl_gen_")):
+            val = int(expr.name.name[8:])
+            return z3.BitVecVal(val, expr.size)
         else:
             return z3.BitVec(str(expr), expr.size)
 
@@ -177,6 +181,9 @@ class TranslatorZ3(Translator):
                     res = res % arg
                 elif expr.op == "umod":
                     res = z3.URem(res, arg)
+                #FIXME Experimental
+                elif expr.op.startswith("call_func_ret"):
+                    res = z3.BitVec(str(expr), expr.size)
                 else:
                     raise NotImplementedError("Unsupported OP yet: %s" % expr.op)
         elif expr.op == 'parity':

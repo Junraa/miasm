@@ -214,7 +214,7 @@ class ContainerPE(Container):
             for dll, function_list in imported_functions.iteritems():
                 if sym.name in function_list:
                     #TODO check if size is present
-                    symbols_map[sym.name + "." + dll + "@plt"] = sym.value + base_text, 0
+                    symbols_map[sym.name + "." + dll + "@extern"] = sym.value + base_text, 0
                     found = True
                     break
             if found:
@@ -311,7 +311,7 @@ class ContainerELF(Container):
                 if symtab.symbols[sym].value == addr:
                     return sym, symtab.symbols[sym].size;
         else:
-            symbol += "@plt"
+            symbol += "@extern"
         return symbol, 0
 
 
@@ -335,7 +335,7 @@ class ContainerELF(Container):
             index = 0
             for rel_entry in reloc.reltab:
                 addr = (index + 1) * 0x10 + plt.sh.addr
-                symbols_map[rel_entry.sym + "@plt"] = addr, 0
+                symbols_map[rel_entry.sym + "@extern"] = addr, 0
                 index += 1
 
         return symbols_map
