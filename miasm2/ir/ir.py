@@ -236,6 +236,9 @@ class irbloc(object):
             out.append("")
         return "\n".join(out)
 
+    def __iter__(self):
+        return self.irs.__iter__()
+
 
 class DiGraphIR(DiGraph):
 
