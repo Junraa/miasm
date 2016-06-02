@@ -471,10 +471,10 @@ class additional_info:
 
 class instruction_x86(instruction):
     __slots__ = []
-    delayslot = 0
 
     def __init__(self, *args, **kargs):
         super(instruction_x86, self).__init__(*args, **kargs)
+        self.delayslot = 0
 
     def v_opmode(self):
         return self.additional_info.v_opmode
