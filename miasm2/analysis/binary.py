@@ -301,9 +301,9 @@ class ContainerELF(Container):
         return None
 
 
-     """Search for the given address in all available symbols
-    """
     def get_symbol_by_addr(self, addr):
+        """Search for the given address in all available symbols
+        """
         symbol = self.get_symbol_in_plt(addr)
         if symbol is None:
             symtab = self._executable.getsectionbyname(".symtab")
@@ -340,6 +340,13 @@ class ContainerELF(Container):
 
         return symbols_map
 
+
+    def get_addr_by_symbol(self, name):
+        symtab = self._executable.getsectionbyname(".symtab")
+        if name in symtab.symbols:
+            return symtab.symbols[name].value
+        else:
+            return None
 
     def dis_multibloc(self, offset, blocs=None, resolve_address=False):
         blocks = self.disasmEngine.dis_multibloc(offset, blocs)
