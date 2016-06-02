@@ -285,6 +285,12 @@ class DiGraphIR(DiGraph):
             return {'style': 'filled', 'fillcolor': 'red'}
         return {}
 
+    def get_node(self, label):
+        for node in self._nodes:
+            if node.name == label:
+                return node
+        return None
+
     def dot(self, offset=False):
         """
         @offset: (optional) if set, add the corresponding line number in each
