@@ -196,6 +196,8 @@ class ContainerPE(Container):
 
     def get_all_symbols(self):
         symbols_map = { }
+        if not ("Symbols" in dir(self._executable)):
+            return symbols_map
         symbols = [ x for x in self._executable.Symbols.symbols if
                    x.type == 0x20 ]
         base_text = 0
