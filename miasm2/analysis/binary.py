@@ -323,9 +323,10 @@ class ContainerELF(Container):
         """
         symbols_map = { }
         symtab = self._executable.getsectionbyname(".symtab")
-        for sym in symtab.symtab:
-            if sym.name and sym.value:
-                symbols_map[sym.name] = sym.value, sym.size
+        if symtab:
+            for sym in symtab.symtab:
+                if sym.name and sym.value:
+                    symbols_map[sym.name] = sym.value, sym.size
 
         rel = self._executable.getsectionbyname(".rel.plt")
         rela = self._executable.getsectionbyname(".rela.plt")
